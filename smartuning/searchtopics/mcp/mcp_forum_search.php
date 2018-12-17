@@ -1,0 +1,347 @@
+<?php
+/**
+* Search Topics MCP extension for the phpBB Forum Software package
+* 
+* This extension will add a new panel to the moderation control panel
+* from where you can search for topics and bulk move and delete them.
+* 
+* This code has been derived from the original MCP MAIN extention
+* by Smartuning (www.ecuconnections.com)
+* 
+*/
+
+/**
+*
+* This file is part of the phpBB Forum Software package.
+*
+* @copyright (c) phpBB Limited <https://www.phpbb.com>
+* @license GNU General Public License, version 2 (GPL-2.0)
+*
+* For full copyright and license information, please see
+* the docs/CREDITS.txt file.
+*
+*/
+
+/**
+* @ignore
+*/
+if (!defined('IN_PHPBB'))
+{
+	exit;
+}
+
+/**
+* MCP Forum View
+*/
+function mcp_forum_view_search($id, $mode, $action, $forum_info, $search_criteria = "")
+{
+	global $template, $db, $user, $auth, $cache, $module;
+	global $phpEx, $phpbb_root_path, $config;
+	global $request, $phpbb_dispatcher, $phpbb_container;
+
+	$user->add_lang(array('viewtopic', 'viewforum'));
+
+	include_once($phpbb_root_path . 'includes/functions_display.' . $phpEx);
+
+	// merge_topic is the quickmod action, merge_topics is the mcp_forum action, and merge_select is the mcp_topic action
+	$merge_select = ($action == 'merge_select' || $action == 'merge_topic' || $action == 'merge_topics') ? true : false;
+
+	$forum_id			= $forum_info['forum_id'];
+	$start				= $request->variable('start', 0);
+	$topic_id_list		= $request->variable('topic_id_list', array(0));
+	$post_id_list		= $request->variable('post_id_list', array(0));
+	$source_topic_ids	= array($request->variable('t', 0));
+	$to_topic_id		= $request->variable('to_topic_id', 0);
+
+	$url_extra = '';
+	$url_extra .= ($forum_id) ? "&amp;f=$forum_id" : '';
+	$url_extra .= ($GLOBALS['topic_id']) ? '&amp;t=' . $GLOBALS['topic_id'] : '';
+	$url_extra .= ($GLOBALS['post_id']) ? '&amp;p=' . $GLOBALS['post_id'] : '';
+	$url_extra .= ($GLOBALS['user_id']) ? '&amp;u=' . $GLOBALS['user_id'] : '';
+
+	$url = append_sid("{$phpbb_root_path}mcp.$phpEx?$url_extra");
+
+	/**
+	* Get some data in order to execute other actions.
+	*
+	* @event core.mcp_forum_view_before
+	* @var	string	action				The action
+	* @var	array	forum_info			Array with forum infos
+	* @var	int		start				Start value
+	* @var	array	topic_id_list		Array of topics ids
+	* @var	array	post_id_list		Array of posts ids
+	* @var	array	source_topic_ids	Array of source topics ids
+	* @var	int		to_topic_id			Array of destination topics ids
+	* @since 3.1.6-RC1
+	*/
+	$vars = array(
+		'action',
+		'forum_info',
+		'start',
+		'topic_id_list',
+		'post_id_list',
+		'source_topic_ids',
+		'to_topic_id',
+	);
+	extract($phpbb_dispatcher->trigger_event('core.mcp_forum_view_before', compact($vars)));
+
+	/* @var $pagination \phpbb\pagination */
+	$pagination = $phpbb_container->get('pagination');
+
+	$selected_ids = '';
+	if (count($post_id_list))
+	{
+		foreach ($post_id_list as $num => $post_id)
+		{
+			$selected_ids .= '&amp;post_id_list[' . $num . ']=' . $post_id;
+		}
+	}
+
+
+	make_jumpbox($url . "&amp;i=$id&amp;action=$action&amp;mode=$mode" . (($merge_select) ? $selected_ids : ''), $forum_id, false, 'm_', true);
+
+	$topics_per_page = ($forum_info['forum_topics_per_page']) ? $forum_info['forum_topics_per_page'] : $config['topics_per_page'];
+
+	$sort_days = $total = 0;
+	$sort_key = $sort_dir = '';
+	$sort_by_sql = $sort_order_sql = array();
+	phpbb_mcp_sorting('viewforum', $sort_days, $sort_key, $sort_dir, $sort_by_sql, $sort_order_sql, $total, $forum_id);
+
+	$limit_time_sql = ($sort_days) ? 'AND t.topic_last_post_time >= ' . (time() - ($sort_days * 86400)) : '';
+
+  $search_criteria = $db->sql_escape(utf8_clean_string($search_criteria));
+  
+	/* @var $phpbb_content_visibility \phpbb\content_visibility */
+	$phpbb_content_visibility = $phpbb_container->get('content.visibility');
+
+  if (!empty($search_criteria))
+  {
+  	$sql = 'SELECT t.topic_id FROM ' . TOPICS_TABLE .
+           ' t WHERE t.forum_id = ' . $forum_id . 
+           ' AND ' . $phpbb_content_visibility->get_visibility_sql('topic', $forum_id, 't.') . 
+           ' AND topic_title LIKE "%'. $search_criteria . '%" '. $limit_time_sql. ' ORDER BY t.topic_type DESC, '. $sort_order_sql;
+  }
+  else
+  {
+  	$sql = 'SELECT t.topic_id FROM ' . TOPICS_TABLE .
+           ' t WHERE t.forum_id = ' . $forum_id . 
+           ' AND ' . $phpbb_content_visibility->get_visibility_sql('topic', $forum_id, 't.') . 
+           ' '. $limit_time_sql .' ORDER BY t.topic_type DESC, '. $sort_order_sql;
+  }
+  
+  $result = $db->sql_query($sql);   
+	$forum_topics = mysqli_num_rows($result); 
+	$db->sql_freeresult($result);
+      
+	$base_url = $url . "&amp;search_criteria=$search_criteria&amp;i=$id&amp;action=$action&amp;mode=$mode&amp;sd=$sort_dir&amp;sk=$sort_key&amp;st=$sort_days" . (($merge_select) ? $selected_ids : '');
+	$pagination->generate_template_pagination($base_url, 'pagination', 'start', $forum_topics, $topics_per_page, $start);
+
+	$template->assign_vars(array(
+		'ACTION'				=> $action,
+		'FORUM_NAME'			=> $forum_info['forum_name'],
+		'FORUM_DESCRIPTION'		=> generate_text_for_display($forum_info['forum_desc'], $forum_info['forum_desc_uid'], $forum_info['forum_desc_bitfield'], $forum_info['forum_desc_options']),
+
+		'REPORTED_IMG'			=> $user->img('icon_topic_reported', 'TOPIC_REPORTED'),
+		'UNAPPROVED_IMG'		=> $user->img('icon_topic_unapproved', 'TOPIC_UNAPPROVED'),
+		'LAST_POST_IMG'			=> $user->img('icon_topic_latest', 'VIEW_LATEST_POST'),
+		'NEWEST_POST_IMG'		=> $user->img('icon_topic_newest', 'VIEW_NEWEST_POST'),
+
+		'S_CAN_REPORT'			=> false,
+		'S_CAN_DELETE'			=> $auth->acl_get('m_delete', $forum_id),
+		'S_CAN_MOVE'			=> $auth->acl_get('m_move', $forum_id),
+
+		'MFS_SEARCH_CRITERIA'	=> $search_criteria,
+    
+		'U_VIEW_FORUM'			=> append_sid("{$phpbb_root_path}viewforum.$phpEx", 'f=' . $forum_id),
+		'U_VIEW_FORUM_LOGS'		=> ($auth->acl_gets('a_', 'm_', $forum_id) && $module->loaded('logs')) ? append_sid("{$phpbb_root_path}mcp.$phpEx", 'i=logs&amp;mode=forum_logs&amp;f=' . $forum_id) : '',
+
+		'S_MCP_ACTION'			=> $url . "&amp;i=$id&amp;forum_action=$action&amp;mode=$mode&amp;start=$start" . (($merge_select) ? $selected_ids : ''),
+
+		'TOTAL_TOPICS'			=> $user->lang('VIEW_FORUM_TOPICS', (int) $forum_topics),
+	));
+
+	// Grab icons
+	$icons = $cache->obtain_icons();
+
+	$topic_rows = array();
+
+	if ($config['load_db_lastread'])
+	{
+		$read_tracking_join = ' LEFT JOIN ' . TOPICS_TRACK_TABLE . ' tt ON (tt.topic_id = t.topic_id AND tt.user_id = ' . $user->data['user_id'] . ')';
+		$read_tracking_select = ', tt.mark_time';
+	}
+	else
+	{
+		$read_tracking_join = $read_tracking_select = '';
+	}
+  
+	/**
+	* Modify SQL query before MCP forum view topic list is queried
+	*
+	* @event core.mcp_view_forum_modify_sql
+	* @var	string	sql			SQL query for forum view topic list
+	* @var	int	forum_id	ID of the forum
+	* @var	string  limit_time_sql		SQL query part for limit time
+	* @var	string  sort_order_sql		SQL query part for sort order
+	* @var	int topics_per_page			Number of topics per page
+	* @var	int start			Start value
+	* @since 3.1.2-RC1
+	*/
+	$vars = array('sql', 'forum_id', 'limit_time_sql', 'sort_order_sql', 'topics_per_page', 'start');
+	extract($phpbb_dispatcher->trigger_event('core.mcp_view_forum_modify_sql', compact($vars)));
+
+	$result = $db->sql_query_limit($sql, $topics_per_page, $start);
+
+	$topic_list = $topic_tracking_info = array();
+
+	while ($row_ary = $db->sql_fetchrow($result))
+	{
+		$topic_list[] = $row_ary['topic_id'];
+	}
+	$db->sql_freeresult($result);
+
+  if (!empty($search_criteria))
+  {
+  	$sql = "SELECT t.*$read_tracking_select
+  		FROM " . TOPICS_TABLE . " t $read_tracking_join
+  		WHERE " . $db->sql_in_set('t.topic_id', $topic_list, false, true) .
+      " AND topic_title LIKE '%". $search_criteria ."%'";
+  }
+  else
+  {
+  	$sql = "SELECT t.*$read_tracking_select
+  		FROM " . TOPICS_TABLE . " t $read_tracking_join
+  		WHERE " . $db->sql_in_set('t.topic_id', $topic_list, false, true);
+  }
+
+	$result = $db->sql_query($sql);
+	while ($row_ary = $db->sql_fetchrow($result))
+	{
+		$topic_rows[$row_ary['topic_id']] = $row_ary;
+	}
+	$db->sql_freeresult($result);
+
+	// If there is more than one page, but we have no topic list, then the start parameter is... erm... out of sync
+	if (!count($topic_list) && $forum_topics && $start > 0)
+	{
+		redirect($url . "&amp;i=$id&amp;action=$action&amp;mode=$mode");
+	}
+
+	// Get topic tracking info
+	if (count($topic_list))
+	{
+		if ($config['load_db_lastread'])
+		{
+			$topic_tracking_info = get_topic_tracking($forum_id, $topic_list, $topic_rows, array($forum_id => $forum_info['mark_time']));
+		}
+		else
+		{
+			$topic_tracking_info = get_complete_topic_tracking($forum_id, $topic_list);
+		}
+	}
+
+	foreach ($topic_list as $topic_id)
+	{
+		$row_ary = &$topic_rows[$topic_id];
+
+		$replies = $phpbb_content_visibility->get_count('topic_posts', $row_ary, $forum_id) - 1;
+
+		if ($row_ary['topic_status'] == ITEM_MOVED)
+		{
+			$unread_topic = false;
+		}
+		else
+		{
+			$unread_topic = (isset($topic_tracking_info[$topic_id]) && $row_ary['topic_last_post_time'] > $topic_tracking_info[$topic_id]) ? true : false;
+		}
+
+		// Get folder img, topic status/type related information
+		$folder_img = $folder_alt = $topic_type = '';
+		topic_status($row_ary, $replies, $unread_topic, $folder_img, $folder_alt, $topic_type);
+
+		$topic_title = censor_text($row_ary['topic_title']);
+
+		$topic_unapproved = (($row_ary['topic_visibility'] == ITEM_UNAPPROVED || $row_ary['topic_visibility'] == ITEM_REAPPROVE)  && $auth->acl_get('m_approve', $row_ary['forum_id'])) ? true : false;
+		$posts_unapproved = ($row_ary['topic_visibility'] == ITEM_APPROVED && $row_ary['topic_posts_unapproved'] && $auth->acl_get('m_approve', $row_ary['forum_id'])) ? true : false;
+		$topic_deleted = $row_ary['topic_visibility'] == ITEM_DELETED;
+		$u_mcp_queue = ($topic_unapproved || $posts_unapproved) ? $url . '&amp;i=queue&amp;mode=' . (($topic_unapproved) ? 'approve_details' : 'unapproved_posts') . '&amp;t=' . $row_ary['topic_id'] : '';
+		$u_mcp_queue = (!$u_mcp_queue && $topic_deleted) ? $url . '&amp;i=queue&amp;mode=deleted_topics&amp;t=' . $topic_id : $u_mcp_queue;
+
+		$topic_row = array(
+			'ATTACH_ICON_IMG'		=> ($auth->acl_get('u_download') && $auth->acl_get('f_download', $row_ary['forum_id']) && $row_ary['topic_attachment']) ? $user->img('icon_topic_attach', $user->lang['TOTAL_ATTACHMENTS']) : '',
+			'TOPIC_IMG_STYLE'		=> $folder_img,
+			'TOPIC_FOLDER_IMG'		=> $user->img($folder_img, $folder_alt),
+			'TOPIC_ICON_IMG'		=> (!empty($icons[$row_ary['icon_id']])) ? $icons[$row_ary['icon_id']]['img'] : '',
+			'TOPIC_ICON_IMG_WIDTH'	=> (!empty($icons[$row_ary['icon_id']])) ? $icons[$row_ary['icon_id']]['width'] : '',
+			'TOPIC_ICON_IMG_HEIGHT'	=> (!empty($icons[$row_ary['icon_id']])) ? $icons[$row_ary['icon_id']]['height'] : '',
+			'UNAPPROVED_IMG'		=> ($topic_unapproved || $posts_unapproved) ? $user->img('icon_topic_unapproved', ($topic_unapproved) ? 'TOPIC_UNAPPROVED' : 'POSTS_UNAPPROVED') : '',
+			'DELETED_IMG'			=> ($topic_deleted) ? $user->img('icon_topic_deleted', 'TOPIC_DELETED') : '',
+
+			'TOPIC_AUTHOR'				=> get_username_string('username', $row_ary['topic_poster'], $row_ary['topic_first_poster_name'], $row_ary['topic_first_poster_colour']),
+			'TOPIC_AUTHOR_COLOUR'		=> get_username_string('colour', $row_ary['topic_poster'], $row_ary['topic_first_poster_name'], $row_ary['topic_first_poster_colour']),
+			'TOPIC_AUTHOR_FULL'			=> get_username_string('full', $row_ary['topic_poster'], $row_ary['topic_first_poster_name'], $row_ary['topic_first_poster_colour']),
+			'U_TOPIC_AUTHOR'			=> get_username_string('profile', $row_ary['topic_poster'], $row_ary['topic_first_poster_name'], $row_ary['topic_first_poster_colour']),
+
+			'LAST_POST_AUTHOR'			=> get_username_string('username', $row_ary['topic_last_poster_id'], $row_ary['topic_last_poster_name'], $row_ary['topic_last_poster_colour']),
+			'LAST_POST_AUTHOR_COLOUR'	=> get_username_string('colour', $row_ary['topic_last_poster_id'], $row_ary['topic_last_poster_name'], $row_ary['topic_last_poster_colour']),
+			'LAST_POST_AUTHOR_FULL'		=> get_username_string('full', $row_ary['topic_last_poster_id'], $row_ary['topic_last_poster_name'], $row_ary['topic_last_poster_colour']),
+			'U_LAST_POST_AUTHOR'		=> get_username_string('profile', $row_ary['topic_last_poster_id'], $row_ary['topic_last_poster_name'], $row_ary['topic_last_poster_colour']),
+
+			'TOPIC_TYPE'		=> $topic_type,
+			'TOPIC_TITLE'		=> $topic_title,
+			'REPLIES'			=> $phpbb_content_visibility->get_count('topic_posts', $row_ary, $row_ary['forum_id']) - 1,
+			'LAST_POST_TIME'	=> $user->format_date($row_ary['topic_last_post_time']),
+			'FIRST_POST_TIME'	=> $user->format_date($row_ary['topic_time']),
+			'LAST_POST_SUBJECT'	=> $row_ary['topic_last_post_subject'],
+			'LAST_VIEW_TIME'	=> $user->format_date($row_ary['topic_last_view_time']),
+
+			'S_TOPIC_REPORTED'		=> (!empty($row_ary['topic_reported']) && empty($row_ary['topic_moved_id']) && $auth->acl_get('m_report', $row_ary['forum_id'])) ? true : false,
+			'S_TOPIC_UNAPPROVED'	=> $topic_unapproved,
+			'S_POSTS_UNAPPROVED'	=> $posts_unapproved,
+			'S_TOPIC_DELETED'		=> $topic_deleted,
+			'S_UNREAD_TOPIC'		=> $unread_topic,
+		);
+
+		if ($row_ary['topic_status'] == ITEM_MOVED)
+		{
+			$topic_row = array_merge($topic_row, array(
+				'U_VIEW_TOPIC'		=> append_sid("{$phpbb_root_path}viewtopic.$phpEx", "t={$row_ary['topic_moved_id']}"),
+				'U_DELETE_TOPIC'	=> ($auth->acl_get('m_delete', $forum_id)) ? append_sid("{$phpbb_root_path}mcp.$phpEx", "i=$id&amp;f=$forum_id&amp;topic_id_list[]={$row_ary['topic_id']}&amp;mode=forum_view&amp;action=delete_topic") : '',
+				'S_MOVED_TOPIC'		=> true,
+				'TOPIC_ID'			=> $row_ary['topic_moved_id'],
+			));
+		}
+		else
+		{
+			$u_select_topic = $url . "&amp;i=$id&amp;mode=topic_view&amp;action=merge&amp;to_topic_id=" . $row_ary['topic_id'] . $selected_ids;
+
+			$topic_row = array_merge($topic_row, array(
+				'U_VIEW_TOPIC'		=> append_sid("{$phpbb_root_path}viewtopic.$phpEx", "f=$forum_id&amp;t={$row_ary['topic_id']}"),
+
+				'S_SELECT_TOPIC'	=> ($merge_select && !in_array($row_ary['topic_id'], $source_topic_ids)) ? true : false,
+				'U_SELECT_TOPIC'	=> $u_select_topic,
+				'U_MCP_QUEUE'		=> $u_mcp_queue,
+				'U_MCP_REPORT'		=> ($auth->acl_get('m_report', $forum_id)) ? append_sid("{$phpbb_root_path}mcp.$phpEx", 'i=main&amp;mode=topic_view&amp;t=' . $row_ary['topic_id'] . '&amp;action=reports') : '',
+				'TOPIC_ID'			=> $row_ary['topic_id'],
+				'S_TOPIC_CHECKED'	=> ($topic_id_list && in_array($row_ary['topic_id'], $topic_id_list)) ? true : false,
+			));
+		}
+
+		$row = $row_ary;
+		/**
+		* Modify the topic data before it is assigned to the template in MCP
+		*
+		* @event core.mcp_view_forum_modify_topicrow
+		* @var	array	row		Array with topic data
+		* @var	array	topic_row	Template array with topic data
+		* @since 3.1.0-a1
+		*/
+		$vars = array('row', 'topic_row');
+		extract($phpbb_dispatcher->trigger_event('core.mcp_view_forum_modify_topicrow', compact($vars)));
+		$row_ary = $row;
+		unset($row);
+
+		$template->assign_block_vars('topicrow', $topic_row);
+	}
+	unset($topic_rows);
+}

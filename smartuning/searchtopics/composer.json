@@ -1,0 +1,29 @@
+{
+    "name": "Search Topics",
+    "type": "phpbb-extension",
+    "description": "Search Topics Bulk Move and Delete MCP extension for phpBB 3.2",
+    "homepage": "https://github.com/smartuning/search-topics/",
+    "version": "0.9.0",
+    "time": "2018-12-17",
+    "keywords": ["phpbb", "extension", "acme", "demo"],
+    "license": "GPL-2.0",
+    "authors": [
+        {
+            "name": "Smartuning",
+            "homepage": "https://github.com/smartuning/"
+        }
+    ],
+    "require": {
+        "php": ">=5.3.3",
+        "composer/installers": "~1.0"
+    },
+    "require-dev": {
+        "phpbb/epv": "dev-master"
+    },
+    "extra": {
+        "display-name": "Search Topics Extension",
+        "soft-require": {
+            "phpbb/phpbb": "~3.2"
+        }
+    }
+}
