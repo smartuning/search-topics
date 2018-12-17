@@ -22,6 +22,8 @@
 *
 */
 
+namespace smartuning\searchtopics\mcp;
+
 /**
 * @ignore
 */

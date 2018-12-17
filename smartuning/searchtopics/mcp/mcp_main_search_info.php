@@ -22,12 +22,14 @@
 *
 */
 
+namespace smartuning\searchtopics\mcp;
+
 class mcp_main_search_info
 {
 	function module()
 	{
 		return array(
-			'filename'	=> 'mcp_main_search',
+			'filename'	=> '\smartuning\searchtopics\mcp\mcp_main_search',
 			'title'		=> 'MCP_MAIN_SEARCH',
 			'modes'		=> array(
 				'forum_view_search'	=> array('title' => 'MCP_MAIN_FORUM_VIEW', 'auth' => 'acl_m_,$id', 'cat' => array('MCP_MAIN_SEARCH')),

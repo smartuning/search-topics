@@ -21,7 +21,7 @@
         "phpbb/epv": "dev-master"
     },
     "extra": {
-        "display-name": "Search Topics Extension",
+        "display-name": "Search Topics",
         "soft-require": {
             "phpbb/phpbb": "~3.2"
         }
