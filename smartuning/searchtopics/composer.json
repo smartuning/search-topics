@@ -5,7 +5,7 @@
     "homepage": "https://github.com/smartuning/search-topics/",
     "version": "0.1.0",
     "time": "2018-12-17",
-    "keywords": ["phpbb", "extension", "acme", "demo"],
+    "keywords": ["phpbb", "extension", "search", "topics", "bulk"],
     "license": "GPL-2.0",
     "authors": [
         {
