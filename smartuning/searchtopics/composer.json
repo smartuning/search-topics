@@ -1,5 +1,5 @@
 {
-    "name": "Search Topics",
+    "name": "smartuning/searchtopics",
     "type": "phpbb-extension",
     "description": "Search Topics Bulk Move and Delete MCP extension for phpBB 3.2",
     "homepage": "https://github.com/smartuning/search-topics/",
